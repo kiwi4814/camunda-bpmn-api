@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="me.corningrey.camunda.api.dao.ProcessDefinitionMapper">
+
+    <resultMap id="BaseResultMap" type="me.corningrey.camunda.api.model.ProcessDefinitionExt">
+        <result column="ID_" property="id" jdbcType="VARCHAR"/>
+        <result column="KEY_" property="key" jdbcType="VARCHAR"/>
+        <result column="NAME_" property="name" jdbcType="VARCHAR"/>
+        <result column="VERSION_" property="version" jdbcType="NUMERIC"/>
+        <result column="CATEGORY_" property="category" jdbcType="VARCHAR"/>
+        <result column="DEPLOYMENT_ID_" property="deploymentId" jdbcType="VARCHAR"/>
+        <result column="RESOURCE_NAME_" property="resourceName" jdbcType="VARCHAR"/>
+        <result column="DGRM_RESOURCE_NAME_" property="diagramResourceName" jdbcType="VARCHAR"/>
+        <result column="TENANT_ID_" property="tenantId" jdbcType="VARCHAR"/>
+        <result column="PROCESSTYPE" property="processType" jdbcType="VARCHAR"/>
+        <result column="FORMURL" property="formUrl" jdbcType="VARCHAR"/>
+        <result column="VIEWURL" property="viewUrl" jdbcType="VARCHAR"/>
+        <result column="INST_COUNT" property="instanceCount" jdbcType="NUMERIC"/>
+    </resultMap>
+
+    <select id="findProcessDefinitionWithType" parameterType="me.corningrey.camunda.api.model.ProcessSearch"
+            resultMap="BaseResultMap">
+        SELECT DISTINCT
+        RES.*,
+        PD.E_TYPE AS PROCESSTYPE,
+        GF.VC_CONTENT AS FORMURL,
+        GF.VC_REMARK AS VIEWURL,
+        (SELECT DISTINCT
+        COUNT( T1.ID_ )
+        FROM
+        ACT_RU_EXECUTION T1
+        INNER JOIN ACT_RE_PROCDEF T2 ON T1.PROC_DEF_ID_ = T2.ID_
+        WHERE
+        T1.PARENT_ID_ IS NULL
+        AND T2.KEY_ = RES.KEY_
+        AND T1.SUSPENSION_STATE_ = 1) AS INST_COUNT
+        FROM
+        ACT_RE_PROCDEF RES
+        INNER JOIN ( SELECT KEY_, TENANT_ID_, max( VERSION_ ) AS MAX_VERSION FROM ACT_RE_PROCDEF
+        <where>
+            <if test="processDefinitionKey != null and processDefinitionKey != ''">
+                AND KEY_ = #{processDefinitionKey}
+            </if>
+        </where>
+        GROUP BY TENANT_ID_, KEY_ ) VER ON RES.KEY_ = VER.KEY_
+        LEFT JOIN GC_PROCESS_DESIGN PD ON PD.VC_PROCESS_DEF_ID = RES.ID_
+        LEFT JOIN GC_FORM GF ON PD.VC_FORM_ID = GF.L_ID
+        <where>
+            (PD.E_IS_DELETE IS NULL OR PD.E_IS_DELETE != 1)
+            <if test="processDefinitionId != null and processDefinitionId != ''">
+                AND RES.ID_ = #{processDefinitionId}
+            </if>
+            <if test="processDefinitionKey != null and processDefinitionKey != ''">
+                AND RES.KEY_ = #{processDefinitionKey}
+            </if>
+            <if test="processDefinitionName != null and processDefinitionName != ''">
+                AND UPPER( RES.NAME_ ) LIKE UPPER( CONCAT('%',trim(#{processDefinitionName}),'%') ) ESCAPE '\\'
+            </if>
+            <if test="tenancyId != null and tenancyId != ''">
+                AND FIND_IN_SET( RES.TENANT_ID_, #{tenancyId})
+            </if>
+            <if test="processType != null and processType != ''">
+                AND FIND_IN_SET( PD.E_TYPE, #{processType})
+            </if>
+            AND RES.VERSION_ = VER.MAX_VERSION
+            AND ( RES.TENANT_ID_ = VER.TENANT_ID_ OR ( RES.TENANT_ID_ IS NULL AND VER.TENANT_ID_ IS NULL ) )
+        </where>
+        ORDER BY
+        RES.KEY_ ASC,
+        RES.VERSION_ DESC
+    </select>
+</mapper>

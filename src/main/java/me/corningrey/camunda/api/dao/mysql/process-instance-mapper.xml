@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="me.corningrey.camunda.api.dao.ProcessInstanceMapper">
+
+    <resultMap id="BaseResultMap" type="me.corningrey.camunda.api.model.ActivityExt">
+        <result column="ACT_ID_" property="activityId" jdbcType="VARCHAR"/>
+        <result column="ACT_TYPE_" property="activityType" jdbcType="VARCHAR"/>
+        <result column="STATUS" property="status" jdbcType="VARCHAR"/>
+        <result column="NAME_" property="activityName" jdbcType="VARCHAR"/>
+    </resultMap>
+
+    <select id="findHistoricActivityList" parameterType="me.corningrey.camunda.api.model.ActivitySearch"
+            resultMap="BaseResultMap">
+        SELECT
+        t.ACT_ID_,
+        t.ACT_TYPE_,
+        t.NAME_,
+        IF( t.END_TIME_ IS NULL, 'unfinished', 'finished' ) AS STATUS
+        FROM
+        (
+        SELECT
+        RES.ACT_ID_,
+        RES.ACT_TYPE_,
+        ht.NAME_,
+        RES.END_TIME_
+        FROM
+        ACT_HI_ACTINST RES
+        LEFT JOIN act_hi_taskinst ht
+        ON res.TASK_ID_ = ht.ID_
+        WHERE
+        RES.ACT_TYPE_ != 'multiInstanceBody'
+        <if test="actTypes != null and actTypes != ''">
+            AND FIND_IN_SET( RES.ACT_TYPE_, #{actTypes,jdbcType=VARCHAR} )
+        </if>
+        AND RES.PROC_INST_ID_ = #{processInstanceId}
+        UNION ALL
+        SELECT
+        REPLACE( RES1.ACT_ID_, '#multiInstanceBody', '' ) AS ACT_ID_,
+        RES1.ACT_TYPE_,
+        ht1.NAME_,
+        RES1.END_TIME_
+        FROM
+        ACT_HI_ACTINST RES1
+        LEFT JOIN act_hi_taskinst ht1
+        ON res1.TASK_ID_ = ht1.ID_
+        WHERE
+        RES1.ACT_TYPE_ = 'multiInstanceBody'
+        AND RES1.PROC_INST_ID_ = #{processInstanceId}
+        ORDER BY END_TIME_
+        ) t
+        GROUP BY
+        t.ACT_ID_
+    </select>
+
+    <!--流程发起和待办审批后实时查询流程的最新状态、节点等，已修改为新的SQL-->
+    <!--<select id="findProcessInstanceStatus" resultType="java.util.Map">
+        SELECT
+            t1.PROC_INST_ID_ AS processInstanceId,
+            t1.STATE_ AS instanceState,
+            t2.TASK_DEF_KEYS_ AS currentTaskDefKey
+            <if test="taskId!=null and taskId!=''">
+                ,t3.TASK_DEF_KEY_ as singleKey
+            </if>
+        FROM
+            ACT_HI_PROCINST t1
+            LEFT JOIN (
+            SELECT
+                t.PROC_INST_ID_,
+                group_concat( t.TASK_DEF_KEY_ ) AS TASK_DEF_KEYS_
+            FROM
+                ( SELECT DISTINCT h.PROC_INST_ID_, h.TASK_DEF_KEY_ FROM act_hi_taskinst h WHERE h.END_TIME_ IS NULL ORDER BY h.START_TIME_ ) t
+            GROUP BY
+                t.PROC_INST_ID_
+            ) t2 ON t2.PROC_INST_ID_ = t1.PROC_INST_ID_
+            <if test="taskId!=null and taskId!=''">
+                LEFT JOIN ACT_HI_TASKINST t3 ON t1.PROC_INST_ID_ = t3.PROC_INST_ID_
+            </if>
+        <where>
+            <if test="instanceId!=null and instanceId!=''">
+                t1.PROC_INST_ID_ = #{instanceId}
+            </if>
+            <if test="taskId!=null and taskId!=''">
+                t3.ID_ = #{taskId}
+            </if>
+        </where>
+    </select>-->
+
+    <select id="findProcessInstanceStatus" resultType="java.util.Map">
+        SELECT
+        T1.PROC_INST_ID_ AS processInstanceId,
+        T1.STATE_ AS instanceState,
+        T2.CURRENTTASKDEFKEY AS currentTaskDefKey,
+        T2.CURRENTTASKDEFNAME AS currentTaskDefName,
+        T2.CURRENTASSIGNEE AS currentAssignee
+        <if test="taskId!=null and taskId!=''">
+            ,(
+            SELECT
+            B.TASK_DEF_KEY_
+            FROM
+            ACT_HI_TASKINST B
+            WHERE
+            B.ID_ = #{taskId}
+            ) AS singleKey
+        </if>
+        FROM
+        ACT_HI_PROCINST T1
+        LEFT JOIN (
+        SELECT
+        TT.PROC_INST_ID_,
+        GROUP_CONCAT( TT.TASK_DEF_KEY_ ) AS CURRENTTASKDEFKEY,
+        GROUP_CONCAT( TT.TASKNAME ) AS CURRENTTASKDEFNAME,
+        GROUP_CONCAT( TT.ASSIGNEES ) AS CURRENTASSIGNEE
+        FROM
+        (
+        SELECT
+        T.PROC_INST_ID_,
+        T.TASK_DEF_KEY_,
+        T.NAME_ AS TASKNAME,
+        GROUP_CONCAT( T.ASSIGNEE_ ) AS ASSIGNEES
+        FROM
+        ACT_HI_TASKINST T
+        GROUP BY
+        T.PROC_INST_ID_,
+        T.END_TIME_,
+        T.TASK_DEF_KEY_,
+        T.NAME_
+        HAVING
+        T.PROC_INST_ID_ =
+        <choose>
+            <when test="taskId!=null and taskId!=''">
+                ( SELECT C.PROC_INST_ID_ FROM ACT_HI_TASKINST C WHERE C.ID_ = #{taskId} )
+            </when>
+            <otherwise>
+                #{instanceId}
+            </otherwise>
+        </choose>
+        AND T.END_TIME_ IS NULL
+        ) TT
+        GROUP BY
+        TT.PROC_INST_ID_
+        ) T2 ON T1.PROC_INST_ID_ = T2.PROC_INST_ID_
+        WHERE
+        T1.PROC_INST_ID_ =
+        <choose>
+            <when test="taskId!=null and taskId!=''">
+                ( SELECT C.PROC_INST_ID_ FROM ACT_HI_TASKINST C WHERE C.ID_ = #{taskId} )
+            </when>
+            <otherwise>
+                #{instanceId}
+            </otherwise>
+        </choose>
+    </select>
+
+    <!-- 查询指定租户下，审批人关联的流程实例id -->
+    <select id="findInstanceIdsByAssignee" resultType="java.lang.String">
+        SELECT DISTINCT aht.PROC_INST_ID_
+        FROM act_hi_taskinst aht
+        <where>
+            <if test="tenantId!=null and tenantId!=''">
+                and aht.TENANT_ID_ = #{tenantId}
+            </if>
+            <if test="assignee.size>0">
+                and aht.ASSIGNEE_ in
+                <foreach collection="assignee" item="str" open="(" close=")" separator=",">
+                    #{str}
+                </foreach>
+            </if>
+        </where>
+    </select>
+
+    <select id="findProcessDefinitionByInstance" resultType="java.lang.String">
+        SELECT
+            PROC_DEF_ID_
+        FROM
+            act_ru_execution
+        WHERE
+            ID_ = #{instanceId}
+    </select>
+
+    <select id="findInstanceBaseInfoById" resultType="java.util.HashMap">
+        SELECT
+            START_ACT_ID_ AS START,
+            IF( END_TIME_ IS NULL, '0', '1' ) AS STATUS,
+            STATE_ AS STATE
+        FROM
+            ACT_HI_PROCINST
+        WHERE
+            ID_ = #{instanceId}
+    </select>
+
+    <select id="findActiveActivity" resultType="java.util.HashMap">
+        SELECT
+            GROUP_CONCAT( u.ACT_ID_ ) AS sourceActivityId,
+            GROUP_CONCAT( u.ACT_NAME_ ) AS sourceActivityName
+        FROM
+            (
+            SELECT
+                t.ACT_ID_,
+                MAX( DISTINCT t.ACT_NAME_ ) AS ACT_NAME_
+            FROM
+                ( SELECT SUBSTRING_INDEX( ACT_ID_, '#multiInstanceBody', 1 ) AS ACT_ID_, ACT_NAME_ FROM ACT_HI_ACTINST WHERE PROC_INST_ID_ = #{instanceId} AND END_TIME_ IS NULL ) t
+            GROUP BY
+            t.ACT_ID_
+            ) u
+    </select>
+
+</mapper>

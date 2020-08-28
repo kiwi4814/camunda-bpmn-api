@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="me.corningrey.camunda.api.dao.ProcessSettingMapper">
+
+    <!-- 根据processDefinitionId和taskKey查找设置信息 -->
+    <select id="selectTaskSettingByConditions" resultType="me.corningrey.camunda.api.model.TaskSettingHis">
+		SELECT
+			l_task_setting_id AS taskSettingId,
+			vc_process_def_id AS processDefinitionId,
+			vc_process_def_key AS processDefinitionKey,
+			vc_tenant_id AS tenantId,
+			vc_task_def_key AS taskDefinitionKey,
+			vc_task_setting_type AS taskSettingType,
+			vc_api_id AS apiId,
+			vc_approvers AS approvers,
+			vc_approve_options AS approveOptions,
+			vc_oper_actions AS operActions
+		FROM
+			gc_task_setting_his
+		WHERE
+			vc_task_def_key = #{taskDefinitionKey}
+			AND vc_process_def_id = #{processDefinitionId}
+			limit 1
+    </select>
+
+    <!-- 根据租户ID以及类型查找请求URL -->
+    <select id="selectRequestURL" resultType="java.util.Map">
+		SELECT
+			API.API_NAME AS apiName,
+			API.API_URL AS appUrl,
+			API.SEARCH_URL AS searchUrl,
+			TI.VC_APP_SECRET AS appSecret,
+			API.API_REQUEST_METHOD AS requestMethod,
+			API.API_TYPE AS apiType
+		FROM
+			GC_API API
+			LEFT JOIN GC_TENANCY_INFO TI ON TI.L_ID = API.L_TENANCY_ID
+		WHERE
+			API.L_ID = #{apiId}
+	</select>
+
+    <select id="selectRandomProcessKey" resultType="java.lang.String">
+		select func_seq_generate('',100,'')
+	</select>
+</mapper>

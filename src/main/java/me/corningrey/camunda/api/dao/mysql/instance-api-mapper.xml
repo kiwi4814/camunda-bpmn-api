@@ -1,0 +1,420 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="me.corningrey.camunda.api.dao.InstanceAPIMapper">
+    <resultMap id="OperHistoryMap" type="me.corningrey.camunda.api.model.ProcessOperHistory">
+        <result column="operHisId" property="operHisId" jdbcType="NUMERIC"/>
+        <result column="processName" property="processName" jdbcType="VARCHAR"/>
+        <result column="processInstanceId" property="processInstanceId" jdbcType="VARCHAR"/>
+        <result column="processInstanceRemark" property="processInstanceRemark" jdbcType="VARCHAR"/>
+        <result column="operType" property="operType" jdbcType="VARCHAR"/>
+        <result column="operTypeName" property="operTypeName" jdbcType="VARCHAR"/>
+        <result column="taskId" property="taskId" jdbcType="VARCHAR"/>
+        <result column="taskDefinitionKey" property="taskDefinitionKey" jdbcType="VARCHAR"/>
+        <result column="nodeName" property="nodeName" jdbcType="VARCHAR"/>
+        <result column="operUser" property="operUser" jdbcType="VARCHAR"/>
+        <result column="operTime" property="operTime" jdbcType="TIMESTAMP"/>
+        <result column="operComment" property="operComment" jdbcType="VARCHAR"/>
+        <result column="operReason" property="operReason" jdbcType="VARCHAR"/>
+        <result column="isVisible" property="isVisible" jdbcType="VARCHAR"/>
+        <result column="variableMap" property="variableMap"
+                typeHandler="me.corningrey.camunda.api.handler.JsonObjectTypeHandler"/>
+    </resultMap>
+
+    <resultMap id="InstanceMap" type="me.corningrey.camunda.api.model.ProcessInstanceExt">
+        <result column="id" property="id" jdbcType="VARCHAR"/>
+        <result column="processInstanceId" property="processInstanceId" jdbcType="VARCHAR"/>
+        <result column="businessKey" property="businessKey" jdbcType="VARCHAR"/>
+        <result column="processDefinitionId" property="processDefinitionId" jdbcType="VARCHAR"/>
+        <result column="processDefinitionKey" property="processDefinitionKey" jdbcType="VARCHAR"/>
+        <result column="processDefinitionName" property="processDefinitionName" jdbcType="VARCHAR"/>
+        <result column="processDefinitionVersion" property="processDefinitionVersion" jdbcType="VARCHAR"/>
+        <result column="startTime" property="startTime" jdbcType="DATE"/>
+        <result column="endTime" property="endTime" jdbcType="DATE"/>
+        <result column="startUserId" property="startUserId" jdbcType="VARCHAR"/>
+        <result column="state" property="state" jdbcType="VARCHAR"/>
+        <result column="tenantId" property="tenantId" jdbcType="VARCHAR"/>
+        <result column="endActivityId" property="endActivityId" jdbcType="VARCHAR"/>
+        <result column="deleteReason" property="deleteReason" jdbcType="VARCHAR"/>
+        <result column="removalTime" property="removalTime" jdbcType="DATE"/>
+        <result column="rootProcessInstanceId" property="rootProcessInstanceId" jdbcType="VARCHAR"/>
+        <result column="superProcessInstanceId" property="superProcessInstanceId" jdbcType="VARCHAR"/>
+        <result column="startActivityId" property="startActivityId" jdbcType="VARCHAR"/>
+        <result column="instanceRemark" property="instanceRemark" jdbcType="VARCHAR"/>
+        <result column="variableMap" property="variableMap"
+                typeHandler="me.corningrey.camunda.api.handler.JsonObjectTypeHandler"/>
+    </resultMap>
+
+    <!--查询流程操作日志（包括待操作的）-->
+    <select id="findProcessOperHistoryList" resultMap="OperHistoryMap">
+        SELECT
+        HPI.ID_ AS processInstanceId,
+        D.NAME_ AS processName,
+        IF
+        ( ART1.TEXT_ IS NULL, D.NAME_, ART1.TEXT_ ) AS processInstanceRemark,
+        GOP.VC_OPER_TYPE AS operType,
+        eD.vc_name AS operTypeName,
+        GOP.VC_TASK_ID AS taskId,
+        RES.TASK_DEF_KEY_ AS taskDefinitionKey,
+        RES.NAME_ AS nodeName,
+        GOP.VC_OPER_USER AS operUser,
+        GOP.D_OPER_TIME AS operTime,
+        GOP.VC_OPER_COMMENT AS operComment,
+        GOP.VC_OPER_REASON AS operReason
+        <if test="oper.currentUser != null and oper.currentUser != ''">
+            ,IF
+            ( GOP.VC_OPER_USER = #{oper.currentUser} OR GTA.VC_AGENT = #{oper.currentUser}, '0', '1' ) AS isVisible
+        </if>
+        <if test="oper.variableKeys != null and oper.variableKeys != ''">
+            ,(
+            SELECT
+            concat( "{", group_concat( concat( '"', REST.NAME_, '":', '"', REPLACE(REST.TEXT_, "\"", "\\\""), '"' ) ),
+            "}" )
+            FROM
+            ACT_HI_VARINST REST
+            WHERE
+            REST.TEXT_ IS NOT NULL
+            AND REST.PROC_INST_ID_ = HPI.ID_
+            AND FIND_IN_SET(
+            REST.NAME_,
+            REPLACE ( REPLACE ( #{oper.variableKeys,jdbcType=VARCHAR}, '{taskDefinitionKey}',
+            RES.TASK_DEF_KEY_ ), '{taskId}', RES.ID_ ))
+            ) AS variableMap
+        </if>
+        FROM
+        GC_OPER_HISTORY GOP
+        INNER JOIN ACT_HI_PROCINST HPI ON GOP.VC_INSTANCE_ID = HPI.ID_
+        INNER JOIN ACT_RE_PROCDEF D ON HPI.PROC_DEF_ID_ = D.ID_
+        LEFT JOIN act_hi_taskinst RES ON RES.ID_ = GOP.VC_TASK_ID
+        LEFT JOIN GC_TASK_AGENT GTA ON GTA.VC_TASK_ID = RES.ID_
+        AND GTA.VC_PRINCIPAL = RES.ASSIGNEE_
+        LEFT JOIN E_DIM eD ON ED.vc_code = GOP.VC_OPER_TYPE
+        AND ED.vc_type = 'operType'
+        LEFT JOIN ACT_HI_VARINST ART1 ON ART1.PROC_INST_ID_ = HPI.ID_
+        AND ART1.NAME_ = 'instanceRemark'
+        WHERE
+        1 = 1
+        <if test="oper.processInstanceId != null and oper.processInstanceId != ''">
+            AND HPI.ID_ = #{oper.processInstanceId}
+        </if>
+        <if test="oper.taskDefinitionKey != null and oper.taskDefinitionKey != ''">
+            AND RES.TASK_DEF_KEY_ = #{oper.taskDefinitionKey}
+        </if>
+        <if test="oper.tenantId != null and oper.tenantId != ''">
+            AND HPI.TENANT_ID_ = #{oper.tenantId}
+        </if>
+        <if test="oper.operUser != null and oper.operUser != ''">
+            AND GOP.VC_OPER_USER = #{oper.operUser}
+        </if>
+        <if test="oper.operTypes != null and oper.operTypes != ''">
+            AND FIND_IN_SET(GOP.VC_OPER_TYPE, #{oper.operTypes})
+        </if>
+        <foreach item="value" index="key" collection="variableLike.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_HI_VARINST VAR
+            WHERE
+            NAME_ = #{key}
+            AND PROC_INST_ID_ = HPI.ID_
+            AND TASK_ID_ IS NULL
+            AND ( ( VAR_TYPE_ IS NOT NULL AND VAR_TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ LIKE CONCAT('%',
+            #{value}, '%')
+            ESCAPE '\\'
+            ) )
+            )
+        </foreach>
+        <foreach item="value" index="key" collection="variableEquals.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_HI_VARINST VAR
+            WHERE
+            NAME_ = #{key}
+            AND PROC_INST_ID_ = HPI.ID_
+            AND TASK_ID_ IS NULL
+            AND ( ( VAR_TYPE_ IS NOT NULL AND VAR_TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ = #{value} ) )
+            )
+        </foreach>
+        <if test='oper.operStatus == "1" and (oper.operTypes == null or oper.operTypes == "")'>
+            UNION ALL
+            SELECT
+            RES.PROC_INST_ID_ AS processInstanceId,
+            D.NAME_ AS processName,
+            IF(ART4.TEXT_ IS NULL, D.NAME_, ART4.TEXT_) AS processInstanceRemark,
+            '' AS operType,
+            '' AS operTypeName,
+            RES.ID_ AS taskId,
+            RES.TASK_DEF_KEY_ AS taskDefinitionKey,
+            RES.NAME_ AS nodeName,
+            RES.ASSIGNEE_ AS operUser,
+            RES.CREATE_TIME_ AS operTime,
+            '' AS operComment,
+            '' AS operReason
+            <if test="oper.currentUser != null and oper.currentUser != ''">
+                ,IF
+                ( RES.ASSIGNEE_ = #{oper.currentUser} OR GTA.VC_AGENT = #{oper.currentUser}, '0', '1' ) AS isVisible
+            </if>
+            <if test="oper.variableKeys != null and oper.variableKeys != ''">
+                ,(
+                SELECT
+                concat( "{", group_concat( concat( '"', REST.NAME_, '":', '"', REPLACE(REST.TEXT_, "\"", "\\\"") , '"' )
+                ), "}" )
+                FROM
+                ACT_RU_VARIABLE REST
+                WHERE
+                REST.TEXT_ IS NOT NULL
+                AND REST.PROC_INST_ID_ = RES.PROC_INST_ID_
+                AND FIND_IN_SET(
+                REST.NAME_,
+                REPLACE ( REPLACE ( #{oper.variableKeys,jdbcType=VARCHAR}, '{taskDefinitionKey}',
+                RES.TASK_DEF_KEY_ ),
+                '{taskId}', RES.ID_ ))
+                ) AS variableMap
+            </if>
+            FROM
+            ACT_RU_TASK RES
+            INNER JOIN ACT_RE_PROCDEF D ON RES.PROC_DEF_ID_ = D.ID_
+            LEFT JOIN GC_TASK_AGENT GTA ON GTA.VC_TASK_ID = RES.ID_
+            AND GTA.VC_PRINCIPAL = RES.ASSIGNEE_
+            LEFT JOIN ACT_RU_VARIABLE ART4 ON ART4.PROC_INST_ID_ = RES.PROC_INST_ID_
+            AND ART4.NAME_ = 'instanceRemark'
+            WHERE
+            1 = 1
+            <if test="oper.processInstanceId != null and oper.processInstanceId != ''">
+                AND RES.PROC_INST_ID_ = #{oper.processInstanceId}
+            </if>
+            <if test="oper.taskDefinitionKey != null and oper.taskDefinitionKey != ''">
+                AND RES.TASK_DEF_KEY_ = #{oper.taskDefinitionKey}
+            </if>
+            <if test="oper.tenantId != null and oper.tenantId != ''">
+                AND RES.TENANT_ID_ = #{oper.tenantId}
+            </if>
+            <if test="oper.operUser != null and oper.operUser != ''">
+                AND ( RES.ASSIGNEE_ = #{oper.operUser} OR GTA.VC_AGENT = #{oper.operUser} )
+            </if>
+            <foreach item="value" index="key" collection="variableLike.entrySet()">
+                AND EXISTS (
+                SELECT
+                ID_
+                FROM
+                ACT_RU_VARIABLE
+                WHERE
+                NAME_ = #{key}
+                AND TASK_ID_ IS NULL
+                AND RES.PROC_INST_ID_ = PROC_INST_ID_
+                AND ( ( TYPE_ IS NOT NULL AND TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ LIKE CONCAT('%',
+                #{value}, '%') ESCAPE
+                '\\'
+                ) )
+                )
+            </foreach>
+            <foreach item="value" index="key" collection="variableEquals.entrySet()">
+                AND EXISTS (
+                SELECT
+                ID_
+                FROM
+                ACT_RU_VARIABLE
+                WHERE
+                NAME_ = #{key}
+                AND TASK_ID_ IS NULL
+                AND RES.PROC_INST_ID_ = PROC_INST_ID_
+                AND ( ( TYPE_ IS NOT NULL AND TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ = #{value} ) )
+                )
+            </foreach>
+            AND RES.SUSPENSION_STATE_ = 1
+        </if>
+        <choose>
+            <when test="oper.orderString != null and oper.orderString != ''">
+                ORDER BY ${oper.orderString}
+            </when>
+            <otherwise>
+                ORDER BY OPERTIME DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <sql id="proceeInstanceMapping_SQL">
+        SELF.ID_ AS id,
+        SELF.PROC_INST_ID_ AS processInstanceId,
+        SELF.BUSINESS_KEY_ AS businessKey,
+        SELF.PROC_DEF_ID_ AS processDefinitionId,
+        SELF.PROC_DEF_KEY_ AS processDefinitionKey,
+        SELF.START_TIME_ AS startTime,
+        SELF.END_TIME_ AS endTime,
+        SELF.START_USER_ID_ AS startUserId,
+        SELF.STATE_ AS state,
+        SELF.TENANT_ID_ AS tenantId,
+        SELF.END_ACT_ID_ AS endActivityId,
+        SELF.DELETE_REASON_ AS deleteReason,
+        SELF.REMOVAL_TIME_ AS removalTime,
+        SELF.ROOT_PROC_INST_ID_ AS rootProcessInstanceId,
+        SELF.SUPER_PROCESS_INSTANCE_ID_ AS superProcessInstanceId,
+        SELF.START_ACT_ID_ AS startActivityId,
+        DEF.NAME_ as processDefinitionName,
+        DEF.VERSION_ as processDefinitionVersion
+    </sql>
+
+    <select id="findHisInstanceList" resultMap="InstanceMap">
+        SELECT DISTINCT
+        RES.*
+        FROM
+        (
+        SELECT
+        <include refid="proceeInstanceMapping_SQL">
+        </include>
+        ,IF
+        ( ART1.TEXT_ IS NULL, DEF.NAME_, ART1.TEXT_ ) AS instanceRemark
+        <if test="ins.variableKeys != null and ins.variableKeys != ''">
+            ,(
+            SELECT
+            concat( "{", group_concat( concat( '"', REST.NAME_, '":', '"', REPLACE ( REST.TEXT_, "\"", "\\\"" ), '"' )
+            ),
+            "}" )
+            FROM
+            ACT_HI_VARINST REST
+            WHERE
+            REST.TEXT_ IS NOT NULL
+            AND REST.PROC_INST_ID_ = SELF.ID_
+            <if test="ins.variableKeys != null and ins.variableKeys != ''">
+                <if test="ins.variableKeys.indexOf(',') != -1">
+                    AND REST.NAME_ IN
+                    <foreach item="item" index="index" collection="ins.variableKeys.split(',')" open="(" separator=","
+                             close=")">
+                        #{item}
+                    </foreach>
+                </if>
+                <if test="ins.variableKeys.indexOf(',') == -1">
+                    AND REST.NAME_ = #{ins.variableKeys}
+                </if>
+            </if>
+            ) AS variableMap
+        </if>
+        FROM
+        ACT_HI_PROCINST SELF
+        LEFT JOIN ACT_RE_PROCDEF DEF ON SELF.PROC_DEF_ID_ = DEF.ID_
+        LEFT JOIN ACT_HI_VARINST ART1 ON ART1.PROC_INST_ID_ = SELF.ID_
+        AND ART1.NAME_ = 'instanceRemark'
+        WHERE 1=1
+        <if test="ins.instanceId != null and ins.instanceId != ''">
+            AND SELF.PROC_INST_ID_ = #{ins.instanceId}
+        </if>
+        <if test="ins.instanceIds != null and ins.instanceIds != ''">
+            <if test="ins.instanceIds.indexOf(',') != -1">
+                AND SELF.PROC_INST_ID_ IN
+                <foreach item="item" index="index" collection="ins.instanceIds.split(',')" open="(" separator=","
+                         close=")">
+                    #{item}
+                </foreach>
+            </if>
+            <if test="ins.instanceIds.indexOf(',') == -1">
+                AND SELF.PROC_INST_ID_ = #{ins.instanceIds}
+            </if>
+        </if>
+        <if test="insList != null and insList.size > 0">
+            AND SELF.PROC_INST_ID_ IN
+            <foreach item="item" index="index" collection="insList" open="(" separator=","
+                     close=")">
+                #{item}
+            </foreach>
+        </if>
+        <if test="ins.processDefinitionId != null and ins.processDefinitionId != ''">
+            AND SELF.PROC_DEF_ID_ = #{ins.processDefinitionId}
+        </if>
+        <if test="ins.processDefinitionKey != null and ins.processDefinitionKey != ''">
+            AND DEF.KEY_ = #{ins.processDefinitionKey}
+        </if>
+        <if test="ins.processDefinitionName != null and ins.processDefinitionName != ''">
+            AND DEF.NAME_ LIKE CONCAT('%', #{ins.processDefinitionName}, '%') ESCAPE '\\'
+        </if>
+        <if test="ins.businessKey != null and ins.businessKey != ''">
+            AND SELF.BUSINESS_KEY_ LIKE CONCAT('%', #{ins.businessKey}, '%') ESCAPE '\\'
+        </if>
+        <if test="ins.applyerId != null and ins.applyerId != ''">
+            AND SELF.START_USER_ID_ = #{ins.applyerId}
+        </if>
+        <if test='ins.finishedStatus == "0"'>
+            AND SELF.END_TIME_ IS NOT NULL
+        </if>
+        <if test='ins.finishedStatus == "1"'>
+            AND SELF.END_TIME_ IS NULL
+        </if>
+        <if test="ins.deleteReason != null and ins.deleteReason != ''">
+            <if test="ins.deleteReason.indexOf(',') != -1">
+                AND SELF.DELETE_REASON_ IN
+                <foreach item="item" index="index" collection="ins.deleteReason.split(',')" open="(" separator=","
+                         close=")">
+                    #{item}
+                </foreach>
+            </if>
+            <if test="ins.deleteReason.indexOf(',') == -1">
+                AND SELF.DELETE_REASON_ = #{ins.deleteReason}
+            </if>
+        </if>
+        <if test="ins.state != null and ins.state != ''">
+            <if test="ins.state.indexOf(',') != -1">
+                AND SELF.STATE_ IN
+                <foreach item="item" index="index" collection="ins.state.split(',')" open="(" separator=","
+                         close=")">
+                    #{item}
+                </foreach>
+            </if>
+            <if test="ins.state.indexOf(',') == -1">
+                AND SELF.STATE_ = #{ins.state}
+            </if>
+        </if>
+        <if test="ins.instName != null and ins.instName != ''">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_HI_VARINST
+            WHERE
+            NAME_ = 'instanceRemark'
+            AND PROC_INST_ID_ = SELF.PROC_INST_ID_
+            AND ( ( VAR_TYPE_ IS NOT NULL AND VAR_TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ LIKE CONCAT('%',
+            #{ins.instName}, '%') ESCAPE
+            '\\' )
+            )
+            )
+        </if>
+        <foreach item="value" index="key" collection="variableLike.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_HI_VARINST
+            WHERE
+            NAME_ = #{key}
+            AND PROC_INST_ID_ = SELF.PROC_INST_ID_
+            AND ( ( VAR_TYPE_ IS NOT NULL AND VAR_TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ LIKE
+            CONCAT('%', #{value}, '%') ESCAPE '\\' ) )
+            )
+        </foreach>
+        <foreach item="value" index="key" collection="variableEquals.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_HI_VARINST
+            WHERE
+            NAME_ = #{key}
+            AND PROC_INST_ID_ = SELF.PROC_INST_ID_
+            AND ( ( VAR_TYPE_ IS NOT NULL AND VAR_TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ = #{value} ) )
+            )
+        </foreach>
+        <if test="ins.tenancyId != null and ins.tenancyId != ''">
+            AND SELF.TENANT_ID_ = #{ins.tenancyId}
+        </if>
+        ) RES
+        <choose>
+            <when test="ins.orderString != null and ins.orderString != ''">
+                ORDER BY ${ins.orderString}
+            </when>
+            <otherwise>
+                ORDER BY startTime DESC
+            </otherwise>
+        </choose>
+    </select>
+</mapper>

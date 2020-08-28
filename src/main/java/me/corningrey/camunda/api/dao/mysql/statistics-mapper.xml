@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="me.corningrey.camunda.api.dao.StatisticsMapper">
+    <select id="findAgentTaskCount" resultType="java.util.HashMap">
+
+        SELECT
+            count(
+            IF
+            ( e_is_completed = 'y', TRUE, NULL )) AS finishedAgentTaskCount,
+            count(
+            IF
+            ( e_is_completed = 'n', TRUE, NULL )) AS todoAgentTaskCount
+        FROM
+            gc_task_agent gta
+            LEFT JOIN act_ru_task art ON gta.vc_task_id = art.ID_
+        WHERE
+            gta.vc_agent = #{userId}
+            AND art.TENANT_ID_ = #{tenantId}
+
+    </select>
+
+    <sql id="taskSearch">
+        <if test="tenantId != null and tenantId != ''">
+            AND AT.TENANT_ID_ = #{tenantId}
+        </if>
+        <if test="userId != null and userId != ''">
+            AND ( AT.ASSIGNEE_ = #{userId} OR GT.VC_AGENT = #{userId} )
+        </if>
+    </sql>
+
+    <sql id="processSearch">
+        <if test="tenantId != null and  tenantId != ''">
+            AND AP.TENANT_ID_ = #{tenantId}
+        </if>
+        <if test="userId != null and userId != ''">
+            AND AP.START_USER_ID_ = #{userId}
+        </if>
+    </sql>
+
+    <select id="findCommonData" parameterType="java.lang.String" resultType="java.util.HashMap">
+        SELECT
+        (
+        SELECT
+        count(*)
+        FROM
+        ACT_HI_PROCINST AP
+        WHERE
+        (
+        1 = 1
+        AND AP.STATE_ = 'ACTIVE'
+        AND AP.END_TIME_ IS NULL
+        <include refid="processSearch"/>
+        )
+        ) AS runningProcessCount,
+        (
+        SELECT
+        count(*)
+        FROM
+        ACT_HI_PROCINST AP
+        WHERE
+        (
+        1 = 1
+        AND AP.END_TIME_ IS NOT NULL
+        <include refid="processSearch"/>
+        )
+        ) AS finishedProcessCount,
+        (
+        SELECT
+        COUNT(*)
+        FROM
+        ACT_HI_PROCINST AP
+        WHERE
+        (
+        1 = 1
+        AND AP.END_TIME_ IS NOT NULL
+        <include refid="processSearch"/>
+        AND DATE_FORMAT( AP.END_TIME_, '%Y%m' ) = DATE_FORMAT( CURDATE(), '%Y%m' )
+        )
+        ) AS currentMonthFinishedProcess,
+        (
+        SELECT
+        COUNT(*)
+        FROM
+        ACT_RU_TASK
+        AT LEFT JOIN GC_TASK_AGENT GT ON AT.ID_ = GT.VC_TASK_ID
+        AND GT.E_IS_COMPLETED = 'n'
+        WHERE
+        (
+        1 = 1
+        <include refid="taskSearch"/>
+        AND AT.SUSPENSION_STATE_ = 1
+        )
+        ) AS unDealedTaskCount,
+        (
+        SELECT
+        COUNT(*)
+        FROM
+        ACT_HI_TASKINST
+        AT LEFT JOIN GC_TASK_AGENT GT ON AT.ID_ = GT.VC_TASK_ID
+        AND GT.E_IS_COMPLETED = 'y'
+        WHERE
+        (
+        1 = 1
+        <include refid="taskSearch"/>
+        AND AT.END_TIME_ IS NOT NULL
+        )
+        ) AS completedTaskCount,
+        (
+        SELECT
+        COUNT(*)
+        FROM
+        ACT_HI_TASKINST
+        AT LEFT JOIN GC_TASK_AGENT GT ON AT.ID_ = GT.VC_TASK_ID
+        AND GT.E_IS_COMPLETED = 'y'
+        WHERE
+        (
+        1 = 1
+        <include refid="taskSearch"/>
+        AND AT.END_TIME_ IS NOT NULL
+        AND DATE_FORMAT( AT.END_TIME_, '%Y%m' ) = DATE_FORMAT( CURDATE(), '%Y%m' ))
+        ) AS currentMonthFinishedTask
+    </select>
+</mapper>

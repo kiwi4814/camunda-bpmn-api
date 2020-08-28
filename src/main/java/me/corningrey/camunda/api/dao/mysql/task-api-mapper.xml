@@ -1,0 +1,458 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="me.corningrey.camunda.api.dao.TaskAPIMapper">
+
+    <resultMap id="ResultTaskMap" type="me.corningrey.camunda.api.model.TaskExt">
+        <result column="taskId" property="taskId" jdbcType="VARCHAR"/>
+        <result column="taskDefinitionKey" property="taskDefinitionKey" jdbcType="VARCHAR"/>
+        <result column="taskDefinitionName" property="taskDefinitionName" jdbcType="VARCHAR"/>
+        <result column="startTime" property="startTime" jdbcType="TIMESTAMP"/>
+        <result column="endTime" property="endTime" jdbcType="TIMESTAMP"/>
+        <result column="status" property="status" jdbcType="VARCHAR"/>
+        <result column="assignee" property="assignee" jdbcType="VARCHAR"/>
+        <result column="agent" property="agent" jdbcType="VARCHAR"/>
+        <result column="executionId" property="executionId" jdbcType="VARCHAR"/>
+        <result column="instanceId" property="instanceId" jdbcType="VARCHAR"/>
+        <result column="processDefinitionId" property="processDefinitionId" jdbcType="VARCHAR"/>
+        <result column="processDefinitionName" property="processDefinitionName" jdbcType="VARCHAR"/>
+        <result column="processDefinitionKey" property="processDefinitionKey" jdbcType="VARCHAR"/>
+        <result column="businessKey" property="businessKey" jdbcType="VARCHAR"/>
+        <result column="applyerId" property="applyerId" jdbcType="VARCHAR"/>
+        <result column="processInstanceStartTime" property="processInstanceStartTime" jdbcType="TIMESTAMP"/>
+        <!--流程变量-->
+        <result column="instanceRemark" property="instanceRemark" jdbcType="VARCHAR"/>
+        <result column="result" property="result" jdbcType="VARCHAR"/>
+        <result column="comment" property="comment" jdbcType="VARCHAR"/>
+        <result column="taskSettingId" property="taskSettingId" jdbcType="VARCHAR"/>
+        <result column="taskSettingType" property="taskSettingType" jdbcType="VARCHAR"/>
+        <result column="approveOptions" property="approveOptions" jdbcType="VARCHAR"/>
+        <result column="isFinalApprover" property="isFinalApprover" jdbcType="VARCHAR"/>
+        <result column="isVisible" property="isVisible" jdbcType="VARCHAR"/>
+        <result column="variableMap" property="variableMap"
+                typeHandler="me.corningrey.camunda.api.handler.JsonObjectTypeHandler"/>
+    </resultMap>
+
+    <select id="findTodoTasks" resultMap="ResultTaskMap">
+        SELECT DISTINCT
+        RES.ID_ AS taskId,
+        RES.TASK_DEF_KEY_ AS taskDefinitionKey,
+        RES.NAME_ AS taskDefinitionName,
+        RES.CREATE_TIME_ AS startTime,
+        RES.ASSIGNEE_ AS assignee,
+        GTA.VC_AGENT AS agent,
+        'unfinished' AS status,
+        RES.EXECUTION_ID_ AS executionId,
+        RES.PROC_INST_ID_ AS instanceId,
+        RES.PROC_DEF_ID_ AS processDefinitionId,
+        D.NAME_ AS processDefinitionName,
+        D.KEY_ AS processDefinitionKey,
+        SELF.BUSINESS_KEY_ AS businessKey,
+        SELF.START_USER_ID_ AS applyerId,
+        SELF.START_TIME_ AS processInstanceStartTime,
+        ART1.TEXT_ AS approveOptions,
+        ART3.TEXT_ AS taskSettingtype,
+        IF(ART4.TEXT_ IS NULL, D.NAME_, ART4.TEXT_) AS instanceRemark
+        <if test="taskSearch.currentUser != null and taskSearch.currentUser != ''">
+            ,IF( RES.ASSIGNEE_ = #{taskSearch.currentUser} OR GTA.VC_AGENT = #{taskSearch.currentUser}, '0', '1' ) AS
+            isVisible
+        </if>
+        <if test="taskSearch.variableKeys != null and taskSearch.variableKeys != ''">
+            ,(
+            SELECT
+            concat( "{", group_concat( concat( '"', REST.NAME_, '":', '"', REPLACE(REST.TEXT_, "\"", "\\\"") , '"' ) ),
+            "}" )
+            FROM
+            ACT_RU_VARIABLE REST
+            WHERE
+            REST.TEXT_ IS NOT NULL
+            AND REST.PROC_INST_ID_ = RES.PROC_INST_ID_
+            AND FIND_IN_SET(
+            REST.NAME_,
+            REPLACE ( REPLACE ( #{taskSearch.variableKeys,jdbcType=VARCHAR}, '{taskDefinitionKey}', RES.TASK_DEF_KEY_ ),
+            '{taskId}', RES.ID_ ))
+            ) AS variableMap
+        </if>
+        FROM
+        ACT_RU_TASK RES
+        INNER JOIN ACT_RE_PROCDEF D ON RES.PROC_DEF_ID_ = D.ID_
+        INNER JOIN ACT_HI_PROCINST SELF ON SELF.ID_ = RES.PROC_INST_ID_
+        LEFT JOIN GC_TASK_AGENT GTA ON GTA.VC_TASK_ID = RES.ID_
+        AND GTA.VC_PRINCIPAL = RES.ASSIGNEE_
+        LEFT JOIN ACT_RU_VARIABLE ART1 ON ART1.PROC_INST_ID_ = RES.PROC_INST_ID_
+        AND ART1.NAME_ = CONCAT( RES.TASK_DEF_KEY_, '_approveOptions' )
+        LEFT JOIN ACT_RU_VARIABLE ART3 ON ART3.PROC_INST_ID_ = RES.PROC_INST_ID_
+        AND ART3.NAME_ = CONCAT( RES.TASK_DEF_KEY_, '_taskSettingType' )
+        LEFT JOIN ACT_RU_VARIABLE ART4 ON ART4.PROC_INST_ID_ = RES.PROC_INST_ID_
+        AND ART4.NAME_ = 'instanceRemark'
+        WHERE
+        (
+        1 = 1
+        <if test="taskSearch.tenantId != null and taskSearch.tenantId != ''">
+            AND RES.TENANT_ID_ = #{taskSearch.tenantId}
+        </if>
+        <if test="taskSearch.userId != null and taskSearch.userId != ''">
+            AND ( RES.ASSIGNEE_ = #{taskSearch.userId} OR GTA.VC_AGENT = #{taskSearch.userId} )
+        </if>
+        <if test="taskSearch.instanceId != null and taskSearch.instanceId != ''">
+            AND RES.PROC_INST_ID_ = #{taskSearch.instanceId}
+        </if>
+        <if test="taskSearch.businessKey != null and taskSearch.businessKey != ''">
+            AND SELF.BUSINESS_KEY_ = #{taskSearch.businessKey}
+        </if>
+        <if test="taskSearch.processDefinitionKey != null and taskSearch.processDefinitionKey != ''">
+            AND D.KEY_ = #{taskSearch.processDefinitionKey}
+        </if>
+        <if test="taskSearch.processDefinitionName != null and taskSearch.processDefinitionName != ''">
+            AND D.NAME_ LIKE CONCAT('%', #{taskSearch.processDefinitionName}, '%') ESCAPE '\\'
+        </if>
+        <if test="taskSearch.taskDefinitionKey != null and taskSearch.taskDefinitionKey != ''">
+            AND RES.TASK_DEF_KEY_ = #{taskSearch.taskDefinitionKey}
+        </if>
+        <if test="taskSearch.taskDefinitionName != null and taskSearch.taskDefinitionName != ''">
+            AND RES.NAME_ LIKE CONCAT('%', #{taskSearch.taskDefinitionName}, '%') ESCAPE '\\'
+        </if>
+
+        <!--时间查询开始，精确到日-->
+        <if test="taskSearch.instStartTimeStart != null and taskSearch.instStartTimeStart != ''">
+            AND SELF.START_TIME_ <![CDATA[ >= ]]> DATE_FORMAT(#{taskSearch.instStartTimeStart}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.instStartTimeEnd != null and taskSearch.instStartTimeEnd != ''">
+            AND SELF.START_TIME_ <![CDATA[ <= ]]> DATE_FORMAT(#{taskSearch.instStartTimeEnd}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.taskStartTimeStart != null and taskSearch.taskStartTimeStart != ''">
+            AND RES.CREATE_TIME_ <![CDATA[ >= ]]> DATE_FORMAT(#{taskSearch.taskStartTimeStart}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.taskStartTimeEnd != null and taskSearch.taskStartTimeEnd != ''">
+            AND RES.CREATE_TIME_ <![CDATA[ <= ]]> DATE_FORMAT(#{taskSearch.taskStartTimeEnd}, '%Y-%m-%d')
+        </if>
+        <!--时间查询结束-->
+
+        <foreach item="value" index="key" collection="variableLike.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_RU_VARIABLE
+            WHERE
+            NAME_ = #{key}
+            AND TASK_ID_ IS NULL
+            AND RES.PROC_INST_ID_ = PROC_INST_ID_
+            AND ( ( TYPE_ IS NOT NULL AND TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ LIKE CONCAT('%', #{value},
+            '%') ESCAPE '\\'
+            ) )
+            )
+        </foreach>
+        <foreach item="value" index="key" collection="variableEquals.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_RU_VARIABLE
+            WHERE
+            NAME_ = #{key}
+            AND TASK_ID_ IS NULL
+            AND RES.PROC_INST_ID_ = PROC_INST_ID_
+            AND ( ( TYPE_ IS NOT NULL AND TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ = #{value} ) )
+            )
+        </foreach>
+        <foreach item="value" index="key" collection="variableNotEquals.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_RU_VARIABLE
+            WHERE
+            NAME_ = #{key}
+            AND TASK_ID_ IS NULL
+            AND RES.PROC_INST_ID_ = PROC_INST_ID_
+            AND NOT ( ( TYPE_ IS NOT NULL AND TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ = #{value} ) )
+            )
+        </foreach>
+        AND RES.SUSPENSION_STATE_ = 1
+        )
+        <choose>
+            <when test="taskSearch.orderString != null and taskSearch.orderString != ''">
+                ORDER BY ${taskSearch.orderString}
+            </when>
+            <otherwise>
+                ORDER BY RES.CREATE_TIME_ DESC
+            </otherwise>
+        </choose>
+
+
+    </select>
+
+
+    <select id="findTasks" resultMap="ResultTaskMap">
+        SELECT DISTINCT
+        RES.ID_ AS taskId,
+        RES.TASK_DEF_KEY_ AS taskDefinitionKey,
+        RES.NAME_ AS taskDefinitionName,
+        RES.START_TIME_ AS startTime,
+        RES.END_TIME_ AS endTime,
+        IF ( RES.END_TIME_ IS NULL, 'unfinished', 'finished' ) AS status,
+        RES.ASSIGNEE_ AS assignee,
+        GTA.VC_AGENT AS agent,
+        RES.EXECUTION_ID_ AS executionId,
+        RES.PROC_INST_ID_ AS instanceId,
+        RES.PROC_DEF_ID_ AS processDefinitionId,
+        D.NAME_ AS processDefinitionName,
+        D.KEY_ AS processDefinitionKey,
+        HPI.BUSINESS_KEY_ AS businessKey,
+        HPI.START_USER_ID_ AS applyerId,
+        HPI.START_TIME_ AS processInstanceStartTime,
+        ART2.TEXT_ AS result,
+        ART3.TEXT_ AS comment,
+        ART4.TEXT_ AS approveOptions,
+        ART6.TEXT_ AS taskSettingtype,
+        IF(ART1.TEXT_ IS NULL, D.NAME_, ART1.TEXT_) AS instanceRemark
+        <if test="taskSearch.currentUser != null and taskSearch.currentUser != ''">
+            ,IF( RES.ASSIGNEE_ = #{taskSearch.currentUser} OR GTA.VC_AGENT = #{taskSearch.currentUser}, '0', '1' ) AS
+            isVisible
+        </if>
+        <if test="taskSearch.variableKeys != null and taskSearch.variableKeys != ''">
+            ,(
+            SELECT
+            concat( "{", group_concat( concat( '"', REST.NAME_, '":', '"', REPLACE(REST.TEXT_, "\"", "\\\""), '"' ) ),
+            "}" )
+            FROM
+            ACT_HI_VARINST REST
+            WHERE
+            REST.TEXT_ IS NOT NULL
+            AND REST.PROC_INST_ID_ = RES.PROC_INST_ID_
+            AND FIND_IN_SET(
+            REST.NAME_,
+            REPLACE ( REPLACE ( #{taskSearch.variableKeys,jdbcType=VARCHAR}, '{taskDefinitionKey}',
+            RES.TASK_DEF_KEY_ ), '{taskId}', RES.ID_ ))
+            ) AS variableMap
+        </if>
+        FROM
+        ACT_HI_TASKINST RES
+        INNER JOIN ACT_HI_PROCINST HPI ON RES.PROC_INST_ID_ = HPI.ID_
+        INNER JOIN ACT_RE_PROCDEF D ON RES.PROC_DEF_ID_ = D.ID_
+        LEFT JOIN GC_TASK_AGENT GTA ON GTA.VC_TASK_ID = RES.ID_
+        AND GTA.VC_PRINCIPAL = RES.ASSIGNEE_
+        <if test="taskSearch.suspendStatus != null and taskSearch.suspendStatus != ''">
+            LEFT JOIN ACT_RU_TASK ART ON ART.ID_ = RES.ID_
+        </if>
+        LEFT JOIN ACT_HI_VARINST ART1 ON ART1.PROC_INST_ID_ = RES.PROC_INST_ID_
+        AND ART1.NAME_ = 'instanceRemark'
+        LEFT JOIN ACT_HI_VARINST ART2 ON ART2.PROC_INST_ID_ = RES.PROC_INST_ID_
+        AND ART2.NAME_ = CONCAT( RES.ID_, '_action' )
+        LEFT JOIN ACT_HI_VARINST ART3 ON ART3.PROC_INST_ID_ = RES.PROC_INST_ID_
+        AND ART3.NAME_ = CONCAT( RES.ID_, '_comment' )
+        LEFT JOIN ACT_HI_VARINST ART4 ON ART4.PROC_INST_ID_ = RES.PROC_INST_ID_
+        AND ART4.NAME_ = CONCAT( RES.TASK_DEF_KEY_, '_approveOptions' )
+        LEFT JOIN ACT_HI_VARINST ART6 ON ART6.PROC_INST_ID_ = RES.PROC_INST_ID_
+        AND ART6.NAME_ = CONCAT( RES.TASK_DEF_KEY_, '_taskSettingType' )
+        WHERE
+        1 = 1
+        <if test="taskSearch.processDefinitionKey != null and taskSearch.processDefinitionKey != ''">
+            AND D.KEY_ = #{taskSearch.processDefinitionKey}
+        </if>
+        <if test="taskSearch.processDefinitionName != null and taskSearch.processDefinitionName != ''">
+            AND D.NAME_ LIKE CONCAT('%', #{taskSearch.processDefinitionName}, '%') ESCAPE '\\'
+        </if>
+        <if test="taskSearch.instanceId != null and taskSearch.instanceId != ''">
+            AND RES.PROC_INST_ID_ = #{taskSearch.instanceId}
+        </if>
+        <if test="taskSearch.businessKey != null and taskSearch.businessKey != ''">
+            AND HPI.BUSINESS_KEY_ = #{taskSearch.businessKey}
+        </if>
+        <if test="taskSearch.userId != null and taskSearch.userId != ''">
+            AND ( RES.ASSIGNEE_ = #{taskSearch.userId} OR GTA.VC_AGENT = #{taskSearch.userId} )
+        </if>
+        <if test="taskSearch.tenantId != null and taskSearch.tenantId != ''">
+            AND RES.TENANT_ID_ = #{taskSearch.tenantId}
+        </if>
+        <if test="taskSearch.taskDefinitionKey != null and taskSearch.taskDefinitionKey != ''">
+            AND RES.TASK_DEF_KEY_ = #{taskSearch.taskDefinitionKey}
+        </if>
+        <if test="taskSearch.taskDefinitionName != null and taskSearch.taskDefinitionName != ''">
+            AND RES.NAME_ LIKE CONCAT('%', #{taskSearch.taskDefinitionName}, '%') ESCAPE '\\'
+        </if>
+        <if test="taskSearch.onlyApproved != null and taskSearch.onlyApproved">
+            AND ( RES.DELETE_REASON_ IS NULL OR RES.DELETE_REASON_ != 'deleted' )
+        </if>
+
+        <!--时间查询开始，精确到日-->
+        <if test="taskSearch.instStartTimeStart != null and taskSearch.instStartTimeStart != ''">
+            AND HPI.START_TIME_ <![CDATA[ >= ]]> DATE_FORMAT(#{taskSearch.instStartTimeStart}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.instStartTimeEnd != null and taskSearch.instStartTimeEnd != ''">
+            AND HPI.START_TIME_ <![CDATA[ <= ]]> DATE_FORMAT(#{taskSearch.instStartTimeEnd}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.instEndTimeStart != null and taskSearch.instEndTimeStart != ''">
+            AND HPI.END_TIME_ <![CDATA[ >= ]]> DATE_FORMAT(#{taskSearch.instEndTimeStart}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.instEndTimeEnd != null and taskSearch.instEndTimeEnd != ''">
+            AND HPI.END_TIME_ <![CDATA[ <= ]]> DATE_FORMAT(#{taskSearch.instEndTimeEnd}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.taskStartTimeStart != null and taskSearch.taskStartTimeStart != ''">
+            AND RES.START_TIME_ <![CDATA[ >= ]]> DATE_FORMAT(#{taskSearch.taskStartTimeStart}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.taskStartTimeEnd != null and taskSearch.taskStartTimeEnd != ''">
+            AND RES.START_TIME_ <![CDATA[ <= ]]> DATE_FORMAT(#{taskSearch.taskStartTimeEnd}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.taskEndTimeStart != null and taskSearch.taskEndTimeStart != ''">
+            AND RES.END_TIME_ <![CDATA[ >= ]]> DATE_FORMAT(#{taskSearch.taskEndTimeStart}, '%Y-%m-%d')
+        </if>
+        <if test="taskSearch.taskEndTimeEnd != null and taskSearch.taskEndTimeEnd != ''">
+            AND RES.END_TIME_ <![CDATA[ <= ]]> DATE_FORMAT(#{taskSearch.taskEndTimeEnd}, '%Y-%m-%d')
+        </if>
+        <!--时间查询结束-->
+
+        <!--待办已经完成-->
+        <if test='taskSearch.finishedStatus == "0"'>
+            AND RES.END_TIME_ IS NOT NULL
+        </if>
+        <!--待办未完成-->
+        <if test='taskSearch.finishedStatus == "1"'>
+            AND RES.END_TIME_ IS NULL
+        </if>
+        <!--流程已经结束-->
+        <if test='taskSearch.instanceStatus == "0"'>
+            AND HPI.END_TIME_ IS NOT NULL
+        </if>
+        <!--流程未结束-->
+        <if test='taskSearch.instanceStatus == "1"'>
+            AND HPI.END_TIME_ IS NULL
+        </if>
+        <!--查询未打回的所有待办-->
+        <if test='taskSearch.suspendStatus == "0"'>
+            AND (ART.SUSPENSION_STATE_ = 1 OR ART.SUSPENSION_STATE_ is NULL)
+        </if>
+        <!-- 只查询被打回的待办 -->
+        <if test='taskSearch.suspendStatus == "1"'>
+            AND ART.SUSPENSION_STATE_ = 2
+        </if>
+        <foreach item="value" index="key" collection="variableLike.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_HI_VARINST VAR
+            WHERE
+            NAME_ = #{key}
+            AND PROC_INST_ID_ = RES.PROC_INST_ID_
+            AND TASK_ID_ IS NULL
+            AND ( ( VAR_TYPE_ IS NOT NULL AND VAR_TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ LIKE CONCAT('%',
+            #{value}, '%')
+            ESCAPE '\\'
+            ) )
+            )
+        </foreach>
+        <foreach item="value" index="key" collection="variableEquals.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_HI_VARINST VAR
+            WHERE
+            NAME_ = #{key}
+            AND PROC_INST_ID_ = RES.PROC_INST_ID_
+            AND TASK_ID_ IS NULL
+            AND ( ( VAR_TYPE_ IS NOT NULL AND VAR_TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ = #{value} ) )
+            )
+        </foreach>
+        <foreach item="value" index="key" collection="variableNotEquals.entrySet()">
+            AND EXISTS (
+            SELECT
+            ID_
+            FROM
+            ACT_HI_VARINST VAR
+            WHERE
+            NAME_ = #{key}
+            AND PROC_INST_ID_ = RES.PROC_INST_ID_
+            AND TASK_ID_ IS NULL
+            AND NOT ( ( VAR_TYPE_ IS NOT NULL AND VAR_TYPE_ = 'string' AND TEXT_ IS NOT NULL AND TEXT_ = #{value} ) )
+            )
+        </foreach>
+        <choose>
+            <when test="taskSearch.orderString != null and taskSearch.orderString != ''">
+                ORDER BY ${taskSearch.orderString}
+            </when>
+            <otherwise>
+                ORDER BY RES.START_TIME_ DESC
+            </otherwise>
+        </choose>
+    </select>
+
+    <update id="addSignExecutionEntity" parameterType="me.corningrey.camunda.api.model.SignTask">
+        INSERT INTO ACT_RU_EXECUTION( ID_, ROOT_PROC_INST_ID_, PROC_INST_ID_, BUSINESS_KEY_, PROC_DEF_ID_, ACT_ID_, ACT_INST_ID_, IS_ACTIVE_, IS_CONCURRENT_, IS_SCOPE_, IS_EVENT_SCOPE_, PARENT_ID_, SUPER_EXEC_, SUPER_CASE_EXEC_, CASE_INST_ID_, SUSPENSION_STATE_, CACHED_ENT_STATE_, SEQUENCE_COUNTER_, TENANT_ID_, REV_)
+        SELECT #{signExecutionId}, ROOT_PROC_INST_ID_, PROC_INST_ID_, BUSINESS_KEY_, PROC_DEF_ID_, ACT_ID_, #{signActivityId}, IS_ACTIVE_, IS_CONCURRENT_, IS_SCOPE_, IS_EVENT_SCOPE_, PARENT_ID_, SUPER_EXEC_, SUPER_CASE_EXEC_, CASE_INST_ID_, SUSPENSION_STATE_, CACHED_ENT_STATE_, SEQUENCE_COUNTER_, TENANT_ID_, REV_ FROM ACT_RU_EXECUTION WHERE ID_ = #{executionId}
+    </update>
+
+    <update id="addSignActivityEntity" parameterType="me.corningrey.camunda.api.model.SignTask">
+        INSERT INTO act_hi_actinst( ID_, PARENT_ACT_INST_ID_, PROC_DEF_KEY_, PROC_DEF_ID_, ROOT_PROC_INST_ID_, PROC_INST_ID_, EXECUTION_ID_, ACT_ID_, TASK_ID_, CALL_PROC_INST_ID_,CALL_CASE_INST_ID_, ACT_NAME_, ACT_TYPE_, ASSIGNEE_, START_TIME_, END_TIME_, DURATION_, ACT_INST_STATE_, SEQUENCE_COUNTER_, TENANT_ID_, REMOVAL_TIME_)
+        SELECT #{signActivityId}, PARENT_ACT_INST_ID_, PROC_DEF_KEY_, PROC_DEF_ID_, ROOT_PROC_INST_ID_, PROC_INST_ID_, #{signExecutionId}, ACT_ID_, #{signTaskId}, CALL_PROC_INST_ID_,CALL_CASE_INST_ID_, ACT_NAME_, ACT_TYPE_, #{signUser}, NOW(), END_TIME_, DURATION_, ACT_INST_STATE_, SEQUENCE_COUNTER_, TENANT_ID_, REMOVAL_TIME_ FROM act_hi_actinst WHERE ID_ = #{activityId}
+    </update>
+
+    <update id="addSignTaskEntity" parameterType="me.corningrey.camunda.api.model.SignTask">
+        INSERT INTO ACT_RU_TASK( ID_, NAME_, PARENT_TASK_ID_, DESCRIPTION_, PRIORITY_, CREATE_TIME_, OWNER_, ASSIGNEE_, DELEGATION_, EXECUTION_ID_, PROC_INST_ID_, PROC_DEF_ID_, CASE_EXECUTION_ID_, CASE_INST_ID_, CASE_DEF_ID_, TASK_DEF_KEY_, DUE_DATE_, FOLLOW_UP_DATE_, SUSPENSION_STATE_, TENANT_ID_, REV_)
+        select #{signTaskId}, NAME_, PARENT_TASK_ID_, DESCRIPTION_, PRIORITY_, NOW(), OWNER_, #{signUser}, DELEGATION_, #{signExecutionId}, PROC_INST_ID_, PROC_DEF_ID_, CASE_EXECUTION_ID_, CASE_INST_ID_, CASE_DEF_ID_, TASK_DEF_KEY_, DUE_DATE_, FOLLOW_UP_DATE_, SUSPENSION_STATE_, TENANT_ID_, REV_ from ACT_RU_TASK where ID_ = #{taskId}
+    </update>
+
+    <update id="addSignTaskHisEntity" parameterType="me.corningrey.camunda.api.model.SignTask">
+        INSERT INTO ACT_HI_TASKINST( ID_, PROC_DEF_KEY_, PROC_DEF_ID_, ROOT_PROC_INST_ID_, PROC_INST_ID_, EXECUTION_ID_, CASE_DEF_KEY_, CASE_DEF_ID_, CASE_INST_ID_, CASE_EXECUTION_ID_, ACT_INST_ID_, NAME_, PARENT_TASK_ID_, DESCRIPTION_, OWNER_, ASSIGNEE_, START_TIME_, END_TIME_, DURATION_, DELETE_REASON_, TASK_DEF_KEY_, PRIORITY_, DUE_DATE_, FOLLOW_UP_DATE_, TENANT_ID_, REMOVAL_TIME_)
+        select #{signTaskId}, PROC_DEF_KEY_, PROC_DEF_ID_, ROOT_PROC_INST_ID_, PROC_INST_ID_, #{signExecutionId}, CASE_DEF_KEY_, CASE_DEF_ID_, CASE_INST_ID_, CASE_EXECUTION_ID_, #{signActivityId}, NAME_, PARENT_TASK_ID_, DESCRIPTION_, OWNER_, #{signUser}, NOW(), END_TIME_, DURATION_, DELETE_REASON_, TASK_DEF_KEY_, PRIORITY_, DUE_DATE_, FOLLOW_UP_DATE_, TENANT_ID_, REMOVAL_TIME_ from ACT_HI_TASKINST where ID_ = #{taskId}
+    </update>
+
+
+    <update id="copySignVariable" parameterType="me.corningrey.camunda.api.model.SignTask">
+        INSERT INTO `act_ru_variable` (`ID_`, `REV_`, `TYPE_`, `NAME_`, `EXECUTION_ID_` , `PROC_INST_ID_`, `CASE_EXECUTION_ID_`, `CASE_INST_ID_`, `TASK_ID_`, `BYTEARRAY_ID_` , `DOUBLE_`, `LONG_`, `TEXT_`, `TEXT2_`, `VAR_SCOPE_` , `SEQUENCE_COUNTER_`, `IS_CONCURRENT_LOCAL_`, `TENANT_ID_`)
+        SELECT #{variableId}, `REV_`, `TYPE_`, `NAME_`, #{signExecutionId} , `PROC_INST_ID_`, `CASE_EXECUTION_ID_`, `CASE_INST_ID_`, `TASK_ID_`, `BYTEARRAY_ID_` , #{doubleValue}, #{longValue}, #{textValue}, `TEXT2_`, #{signExecutionId} , `SEQUENCE_COUNTER_`, `IS_CONCURRENT_LOCAL_`, `TENANT_ID_` FROM `act_ru_variable` WHERE `EXECUTION_ID_` = #{executionId} AND `NAME_` = #{key}
+    </update>
+
+    <update id="copySignVariableHis" parameterType="me.corningrey.camunda.api.model.SignTask">
+        INSERT INTO `act_hi_varinst` (`ID_`, `PROC_DEF_KEY_`, `PROC_DEF_ID_`, `ROOT_PROC_INST_ID_`, `PROC_INST_ID_` , `EXECUTION_ID_`, `ACT_INST_ID_`, `CASE_DEF_KEY_`, `CASE_DEF_ID_`, `CASE_INST_ID_` , `CASE_EXECUTION_ID_`, `TASK_ID_`, `NAME_`, `VAR_TYPE_`, `CREATE_TIME_` , `REV_`, `BYTEARRAY_ID_`, `DOUBLE_`, `LONG_`, `TEXT_` , `TEXT2_`, `TENANT_ID_`, `STATE_`, `REMOVAL_TIME_`)
+        SELECT #{variableId}, `PROC_DEF_KEY_`, `PROC_DEF_ID_`, `ROOT_PROC_INST_ID_`, `PROC_INST_ID_` , #{signExecutionId}, `ACT_INST_ID_`, `CASE_DEF_KEY_`, `CASE_DEF_ID_`, `CASE_INST_ID_` , `CASE_EXECUTION_ID_`, `TASK_ID_`, `NAME_`, `VAR_TYPE_`, now() , `REV_`, `BYTEARRAY_ID_`, #{doubleValue}, #{longValue}, #{textValue} , `TEXT2_`, `TENANT_ID_`, 'CREATED', `REMOVAL_TIME_` FROM act_hi_varinst WHERE EXECUTION_ID_ = #{executionId} AND NAME_ = #{key}
+    </update>
+
+    <insert id="insertProcessOperHistory" parameterType="me.corningrey.camunda.api.model.ProcessOperHistory">
+        insert into gc_oper_history
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="processInstanceId != null">
+                vc_instance_id,
+            </if>
+            <if test="taskId != null">
+                vc_task_id,
+            </if>
+            <if test="operType != null">
+                vc_oper_type,
+            </if>
+            <if test="operUser != null">
+                vc_oper_user,
+            </if>
+            <if test="operComment != null and operComment != ''">
+                vc_oper_comment,
+            </if>
+            <if test="operReason != null and operReason != ''">
+                vc_oper_reason,
+            </if>
+            d_oper_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="processInstanceId != null">
+                #{processInstanceId},
+            </if>
+            <if test="taskId != null">
+                #{taskId},
+            </if>
+            <if test="operType != null">
+                #{operType},
+            </if>
+            <if test="operUser != null">
+                #{operUser},
+            </if>
+            <if test="operComment != null and operComment != ''">
+                #{operComment},
+            </if>
+            <if test="operReason != null and operReason != ''">
+                #{operReason},
+            </if>
+            now()
+        </trim>
+    </insert>
+
+</mapper>

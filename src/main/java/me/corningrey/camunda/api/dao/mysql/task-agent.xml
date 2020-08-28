@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="me.corningrey.camunda.api.dao.TaskAgentMapper">
+    <sql id="Base_Column_List">
+            l_id as id,
+            vc_agent as agent,
+            vc_principal as principal,
+            vc_task_id as taskId,
+            e_is_completed as isCompleted,
+            vc_executor as executor,
+            d_execute_time as executeTime
+    </sql>
+
+    <select id="findAgentByTaskId" resultType="me.corningrey.camunda.api.model.TaskAgent">
+        select <include refid="Base_Column_List"/> from gc_task_agent where vc_task_id = #{taskId}
+    </select>
+
+    <select id="findByAgent" resultType="me.corningrey.camunda.api.model.TaskAgent">
+        select <include refid="Base_Column_List"/> from gc_task_agent where vc_agent = #{agent} and e_is_completed = 'n'
+    </select>
+
+    <!-- 查询代理信息 -->
+    <select id="findAgentInfo" parameterType="me.corningrey.camunda.api.model.TaskSearch"
+            resultType="me.corningrey.camunda.api.model.TaskAgent">
+        SELECT <include refid="Base_Column_List"/>
+          FROM gc_task_agent gta
+        LEFT JOIN act_ru_task art
+          ON gta.vc_task_id = art.ID_
+        WHERE e_is_completed = 'n'
+        <if test="taskId != null">
+            and gta.vc_task_id = #{taskId}
+        </if>
+        <if test="agent != null">
+            and gta.vc_agent = #{agent}
+        </if>
+        <!-- <if test="isCompleted != null">
+            and gta.e_is_completed = #{isCompleted}
+        </if> -->
+        <!-- 获取运行流程实例关联的代理任务 -->
+        <if test="instanceId != null">
+            and art.PROC_INST_ID_ = #{instanceId}
+        </if>
+        <!-- 获取指定租户下的代理任务 -->
+        <if test="tenantId != null">
+            and art.TENANT_ID_ = #{tenantId}
+        </if>
+    </select>
+
+    <update id="finishTask">
+        update gc_task_agent set e_is_completed = 'y',d_execute_time = now(),vc_executor = #{executor}  where vc_task_id = #{taskId}
+    </update>
+
+    <insert id="insert" parameterType="me.corningrey.camunda.api.model.TaskAgent" useGeneratedKeys="true">
+        insert into gc_task_agent
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="agent != null">
+                vc_agent,
+            </if>
+            <if test="principal != null">
+                vc_principal,
+            </if>
+            <if test="taskId != null">
+                vc_task_id,
+            </if>
+            <if test="isCompleted != null">
+                e_is_completed,
+            </if>
+            <if test="executor != null">
+                vc_executor,
+            </if>
+            <if test="executeTime != null">
+                d_execute_time,
+            </if>
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="agent != null">
+                #{agent},
+            </if>
+            <if test="principal != null">
+                #{principal},
+            </if>
+            <if test="taskId != null">
+                #{taskId},
+            </if>
+            <if test="isCompleted != null">
+                #{isCompleted},
+            </if>
+            <if test="executor != null">
+                #{executor},
+            </if>
+            <if test="executeTime != null">
+                #{executeTime,jdbcType=TIMESTAMP},
+            </if>
+        </trim>
+    </insert>
+</mapper>

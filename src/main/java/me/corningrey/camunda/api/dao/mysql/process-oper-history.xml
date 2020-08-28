@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="me.corningrey.camunda.api.dao.ProcessOperHistoryMapper">
+    <!-- 查询流程操作日志 -->
+    <select id="findByProcessInstanceId" parameterType="me.corningrey.camunda.api.model.OperHistorySearch"
+            resultType="me.corningrey.camunda.api.model.ProcessOperHistory">
+        SELECT
+        gop.l_id AS operHisId,
+        gop.vc_instance_id AS processInstanceId,
+        <!-- 流程名称（这里查的是流程定义名称） -->
+        ta.NAME_ AS processName,
+        <!-- 流程实例名称（这里查的是INST_NAME） -->
+        ahv.TEXT_ AS processInstanceRemark,
+        gop.vc_oper_type AS operType,
+        func_get_dim_name (
+        'operType',
+        gop.vc_oper_type,
+        'zh_CN'
+        ) AS operTypeName,
+        gop.vc_task_id AS taskId,
+        aht.TASK_DEF_KEY_ AS taskDefinitionKey,
+        <!-- 节点名称（这里查的是任务名称） -->
+        aht.NAME_ AS nodeName,
+        gop.vc_oper_user AS operUser,
+        gop.d_oper_time AS operTime,
+        gop.vc_oper_comment AS operComment,
+        gop.vc_oper_reason AS operReason
+        FROM
+        gc_oper_history gop
+        LEFT JOIN (
+        SELECT
+        ahp.PROC_INST_ID_,
+        arp.NAME_,
+        arp.TENANT_ID_
+        FROM
+        act_hi_procinst ahp
+        LEFT JOIN act_re_procdef arp ON ahp.PROC_DEF_ID_ = arp.ID_
+        ) ta ON gop.vc_instance_id = ta.PROC_INST_ID_
+        LEFT JOIN act_hi_taskinst aht ON (
+        gop.vc_instance_id = aht.PROC_INST_ID_
+        AND gop.vc_task_id = aht.ID_
+        )
+        LEFT JOIN act_hi_varinst ahv ON (
+        gop.vc_instance_id = ahv.PROC_INST_ID_
+        AND ahv.NAME_ = 'instanceRemark'
+        )
+        <where>
+            <if test="processInstanceId!=null and processInstanceId!=''">
+                and gop.vc_instance_id = #{processInstanceId}
+            </if>
+            <if test="taskDefinitionKey!=null and taskDefinitionKey!=''">
+                and aht.TASK_DEF_KEY_ = #{taskDefinitionKey}
+            </if>
+            <if test="tenantId!=null and tenantId!=''">
+                AND ta.TENANT_ID_ = #{tenantId}
+            </if>
+            <if test="operTypes != null and operTypes != ''">
+                AND FIND_IN_SET(GOP.VC_OPER_TYPE, #{operTypes})
+            </if>
+            <if test="variables.size>0">
+                and gop.vc_instance_id in (
+                select PROC_INST_ID_ from (
+                <foreach collection="variables" index="key" item="value" separator=" union all ">
+                    select ahv.PROC_INST_ID_ from act_hi_varinst ahv where (ahv.NAME_, ahv.TEXT_) = (#{key},#{value})
+                </foreach>
+                ) t group by PROC_INST_ID_ having count(PROC_INST_ID_) = ${variables.size}
+                )
+            </if>
+        </where>
+    </select>
+
+    <!-- 插入操作日志 -->
+    <insert id="insert" parameterType="me.corningrey.camunda.api.model.ProcessOperHistory"
+            useGeneratedKeys="true" keyProperty="operHisId">
+        <selectKey keyProperty="operHisId" order="AFTER" resultType="java.lang.Integer">
+            SELECT LAST_INSERT_ID()
+        </selectKey>
+        insert into gc_oper_history
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="processInstanceId != null">
+                vc_instance_id,
+            </if>
+            <if test="taskId != null">
+                vc_task_id,
+            </if>
+            <if test="operType != null">
+                vc_oper_type,
+            </if>
+            <if test="operUser != null">
+                vc_oper_user,
+            </if>
+            <if test="operComment != null and operComment != ''">
+                vc_oper_comment,
+            </if>
+            <if test="operReason != null and operReason != ''">
+                vc_oper_reason,
+            </if>
+            d_oper_time
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="processInstanceId != null">
+                #{processInstanceId},
+            </if>
+            <if test="taskId != null">
+                #{taskId},
+            </if>
+            <if test="operType != null">
+                #{operType},
+            </if>
+            <if test="operUser != null">
+                #{operUser},
+            </if>
+            <if test="operComment != null and operComment != ''">
+                #{operComment},
+            </if>
+            <if test="operReason != null and operReason != ''">
+                #{operReason},
+            </if>
+            now()
+        </trim>
+    </insert>
+
+    <!-- 删除操作日志 -->
+    <delete id="deleteProcessOperHis" parameterType="java.util.Map">
+        delete goh
+        from gc_oper_history goh
+        <where>
+            <!-- 流程实例id -->
+            <if test="params.instanceId!=null and params.instanceId!=''">
+                and goh.vc_instance_id = #{params.instanceId}
+            </if>
+            <!-- 流程实例key -->
+            <if test="params.tenantId!=null and params.processDefinitionKey!=''">
+                and goh.vc_instance_id in (
+                SELECT DISTINCT
+                ahp.PROC_INST_ID_
+                FROM
+                act_re_procdef arp
+                INNER JOIN act_hi_procinst ahp ON arp.ID_ = ahp.PROC_DEF_ID_
+                WHERE
+                arp.TENANT_ID_ = #{params.tenantId} and arp.KEY_ = #{params.processDefinitionKey}
+                )
+            </if>
+        </where>
+    </delete>
+
+    <!-- 查询流程打回操作对应的待办id（获取最近一条暂停操作对应的待办id） -->
+    <select id="queryBackProcessTaskId" parameterType="string" resultType="string">
+
+
+                        SELECT vc_task_id FROM (
+                            SELECT DISTINCT gop.vc_task_id
+                              FROM gc_oper_history gop
+                            WHERE gop.vc_instance_id = #{processInstanceId}
+                              AND gop.vc_oper_type = '2'
+                            ORDER BY gop.d_oper_time DESC
+                        ) t LIMIT 1
+
+
+    </select>
+</mapper>

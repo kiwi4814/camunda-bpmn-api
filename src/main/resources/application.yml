@@ -1,0 +1,62 @@
+camunda:
+  bpm:
+    authorization:
+      tenant-check-enabled: false
+    auto-deployment-enabled: false
+    database:
+      schema-update: false
+    history-level: audit
+    job-execution:
+      enabled: false
+mapper:
+  identity: MYSQL
+  not-empty: false
+mybatis:
+  mapper-locations: classpath:me/corningrey/camunda/**/mysql/*.xml
+  type-aliases-package: me.corningrey.camunda.**.model
+  type-handlers-package: me.corningrey.camunda.**.handler
+pagehelper:
+  closeConn: true
+  helperDialect: mysql
+  params: count=countSql
+  reasonable: true
+server:
+  address: 127.0.0.1
+  port: 8080
+  servlet:
+    context-path: /camunda
+    session:
+      timeout: -1
+      tracking-modes: cookie
+  tomcat:
+    uri-encoding: UTF-8
+    threads:
+      max: 100
+spring:
+  datasource:
+    continue-on-error: false
+    data: ''
+    driver-class-name: com.p6spy.engine.spy.P6SpyDriver
+    druid:
+      filters: stat,slf4j
+      initialSize: 5
+      maxActive: 20
+      maxPoolPreparedStatementPerConnectionSize: 20
+      maxWait: 600000
+      minEvictableIdleTimeMillis: 300000
+      minIdle: 5
+      poolPreparedStatements: true
+      testOnBorrow: false
+      testOnReturn: false
+      testWhileIdle: true
+      timeBetweenEvictionRunsMillis: 60000
+      validationQuery: SELECT 'x'
+    initialization-mode: NEVER
+    schema: classpath*:schema-*.sql
+    url: jdbc:p6spy:mysql://192.168.10.154:3306/camunda_bpmn?serverTimezone=GMT%2B8&useUnicode=true&characterEncoding=UTF-8&allowMultiQueries=true&nullNamePatternMatchesAll=true&useSSL=false
+    username: root
+    password: 123456
+
+
+
+

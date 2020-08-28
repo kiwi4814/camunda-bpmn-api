@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="me.corningrey.camunda.api.dao.NoticeTaskMapper">
+
+    <!-- 插入操作日志 -->
+    <insert id="insert" parameterType="me.corningrey.camunda.api.model.NoticeTask">
+
+        insert into gc_notice_task
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">
+                ID_,
+            </if>
+            <if test="processInstanceId != null">
+                PROC_INST_ID_,
+            </if>
+            <if test="taskId != null">
+                TASK_ID_,
+            </if>
+            <if test="operUser != null">
+                OPER_USER_,
+            </if>
+            <if test="assignee != null and assignee != ''">
+                ASSIGNEE_,
+            </if>
+            <if test="endTime != null and endTime != ''">
+                END_TIME_,
+            </if>
+            <if test="description != null and description != ''">
+                DESCRIPTION_,
+            </if>
+            <if test="comment != null and comment != ''">
+                COMMENT_,
+            </if>
+                CREATE_TIME_
+        </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">
+                #{id},
+            </if>
+            <if test="processInstanceId != null">
+                #{processInstanceId},
+            </if>
+            <if test="taskId != null">
+                #{taskId},
+            </if>
+            <if test="operUser != null">
+                #{operUser},
+            </if>
+            <if test="assignee != null and assignee != ''">
+                #{assignee},
+            </if>
+            <if test="description != null and description != ''">
+                #{description},
+            </if>
+            <if test="comment != null and comment != ''">
+                #{comment},
+            </if>
+             now()
+        </trim>
+    </insert>
+
+     <!--update-->
+    <update id="updateByPrimaryKey" parameterType="String">
+        update gc_notice_task
+        set
+            <if test="reason != null and reason != ''">
+                COMMENT_ = #{reason},
+            </if>
+              <if test="assignee != null and assignee != ''">
+                ASSIGNEE_ = #{assignee},
+            </if>
+        END_TIME_ = now()
+        where ID_ = #{id}
+    </update>
+       <select id="selectByPrimaryKey" parameterType="String" resultType="me.corningrey.camunda.api.model.NoticeTask">
+        SELECT
+            ID_  as id,
+            PROC_INST_ID_  as  processInstanceId,
+            TASK_ID_  as taskId,
+            OPER_USER_  as operUser,
+            ASSIGNEE_  as assignee,
+            CREATE_TIME_  as createTime,
+            END_TIME_  as endTime,
+            DESCRIPTION_  as description,
+            COMMENT_  as comment
+        FROM gc_notice_task
+        WHERE ID_ = #{id}
+    </select>
+
+     <delete id="deleteByPrimaryKey" parameterType="String">
+        delete from gc_notice_task where ID_ = #{id}
+    </delete>
+</mapper>
